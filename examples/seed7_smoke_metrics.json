@@ -1,0 +1,135 @@
+{
+  "config": {
+    "tasks": 3,
+    "entities": 24,
+    "values": 6,
+    "steps": 65,
+    "batch_size": 24,
+    "d_model": 64,
+    "layers": 2,
+    "heads": 4,
+    "learning_rate": 0.002,
+    "replay_fraction": 0.3,
+    "memory_capacity": 128,
+    "consolidation_strength": 2.0,
+    "seed": 7,
+    "device": "cpu"
+  },
+  "dataset": "Synthetic overlapping entity-relation-value associations; training-fact retention, not out-of-distribution generalization",
+  "results": {
+    "finetune": {
+      "method": "finetune",
+      "parameter_count": 105088,
+      "trajectory": [
+        {
+          "after_task": 0,
+          "accuracy_by_task": [
+            1.0,
+            0.20833,
+            0.125
+          ],
+          "mean_seen_accuracy": 1.0,
+          "last_training_loss": 0.01138
+        },
+        {
+          "after_task": 1,
+          "accuracy_by_task": [
+            0.20833,
+            1.0,
+            0.29167
+          ],
+          "mean_seen_accuracy": 0.60416,
+          "last_training_loss": 0.0054
+        },
+        {
+          "after_task": 2,
+          "accuracy_by_task": [
+            0.125,
+            0.29167,
+            1.0
+          ],
+          "mean_seen_accuracy": 0.47222,
+          "last_training_loss": 0.00455
+        }
+      ],
+      "final_mean_accuracy": 0.47222,
+      "mean_forgetting": 0.79167
+    },
+    "replay": {
+      "method": "replay",
+      "parameter_count": 105088,
+      "trajectory": [
+        {
+          "after_task": 0,
+          "accuracy_by_task": [
+            1.0,
+            0.20833,
+            0.125
+          ],
+          "mean_seen_accuracy": 1.0,
+          "last_training_loss": 0.01138
+        },
+        {
+          "after_task": 1,
+          "accuracy_by_task": [
+            1.0,
+            1.0,
+            0.20833
+          ],
+          "mean_seen_accuracy": 1.0,
+          "last_training_loss": 0.02161
+        },
+        {
+          "after_task": 2,
+          "accuracy_by_task": [
+            1.0,
+            0.875,
+            1.0
+          ],
+          "mean_seen_accuracy": 0.95833,
+          "last_training_loss": 0.15376
+        }
+      ],
+      "final_mean_accuracy": 0.95833,
+      "mean_forgetting": 0.0625
+    },
+    "nova": {
+      "method": "nova",
+      "parameter_count": 105088,
+      "trajectory": [
+        {
+          "after_task": 0,
+          "accuracy_by_task": [
+            1.0,
+            0.20833,
+            0.125
+          ],
+          "mean_seen_accuracy": 1.0,
+          "last_training_loss": 0.01138
+        },
+        {
+          "after_task": 1,
+          "accuracy_by_task": [
+            0.875,
+            1.0,
+            0.20833
+          ],
+          "mean_seen_accuracy": 0.9375,
+          "last_training_loss": 0.0857
+        },
+        {
+          "after_task": 2,
+          "accuracy_by_task": [
+            1.0,
+            0.91667,
+            1.0
+          ],
+          "mean_seen_accuracy": 0.97222,
+          "last_training_loss": 0.25324
+        }
+      ],
+      "final_mean_accuracy": 0.97222,
+      "mean_forgetting": 0.04167
+    }
+  }
+}

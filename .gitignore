@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+runs/
+*.pt
+.DS_Store
+
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+
+# Editor and notebook artifacts
+.ipynb_checkpoints/
+.vscode/
+.idea/
+*.log
