@@ -8,9 +8,11 @@ its context; weights are not updated during evaluation.
 from dataclasses import asdict, dataclass, replace
 import json
 import itertools
+import hashlib
 import math
 from statistics import mean, stdev
 from pathlib import Path
+from time import perf_counter
 import random
 import zlib
 
@@ -34,6 +36,10 @@ class EpisodeConfig:
     seed: int = 7
     eval_episodes: int = 512
     device: str = "cpu"
+    patience: int = 0
+    validate_every: int = 25
+    min_delta: float = 0.001
+    max_seconds: float | None = None
 
     def validate(self) -> None:
         if not (4 <= self.symbols <= 32):
@@ -46,6 +52,10 @@ class EpisodeConfig:
             raise ValueError("d_model must be >=8 and divisible by heads")
         if not 0 < self.learning_rate <= 1:
             raise ValueError("learning_rate must be in (0, 1]")
+        if self.patience < 0 or self.validate_every < 1 or self.min_delta < 0:
+            raise ValueError("patience, validate_every or min_delta is invalid")
+        if self.max_seconds is not None and self.max_seconds <= 0:
+            raise ValueError("max_seconds must be positive")
 
 
 class EpisodeGenerator:
@@ -177,9 +187,38 @@ def evaluate_episodes(
     }
 
 
-def run_episode_experiment(config: EpisodeConfig, output_dir: Path) -> dict:
-    """Train from scratch and test on unseen complete key/value assignments."""
+def _code_fingerprint() -> str:
+    """Invalidate cached results when model, data, or training code changes."""
+    root = Path(__file__).parent
+    signature = hashlib.sha256()
+    signature.update(torch.__version__.encode("utf-8"))
+    for name in ("episodes.py", "model.py"):
+        signature.update(name.encode("utf-8"))
+        signature.update((root / name).read_bytes())
+    return signature.hexdigest()
+
+
+def run_episode_experiment(
+    config: EpisodeConfig, output_dir: Path, *, reuse: bool = False,
+) -> dict:
+    """Train on episodes, with optional budget controls and exact-config reuse.
+
+    Early stopping uses only examples from the training mapping family. The
+    held-out test partition is never used to choose stopping or weights.
+    """
     config.validate()
+    output_dir = Path(output_dir)
+    metric_path = output_dir / "meta_metrics.json"
+    checkpoint_path = output_dir / "meta.pt"
+    fingerprint = _code_fingerprint()
+    if reuse and metric_path.is_file() and checkpoint_path.is_file():
+        try:
+            saved = json.loads(metric_path.read_text(encoding="utf-8"))
+            if saved.get("config") == asdict(config) and saved.get("code_fingerprint") == fingerprint:
+                return {**saved, "cache_hit": True}
+        except (ValueError, OSError):
+            pass
+
     device = torch.device(config.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but not available")
@@ -196,12 +235,28 @@ def run_episode_experiment(config: EpisodeConfig, output_dir: Path) -> dict:
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=0.0)
     trajectory = []
     checkpoints = sorted({0, config.steps // 4, config.steps // 2, config.steps})
+    begin = perf_counter()
+    best_validation = float("inf")
+    best_step = None
+    best_weights = None
+    stale = 0
+    actual_steps = 0
+    reason = "completed"
+
+    if config.patience:
+        # Different generator, same *training* mapping partition. The test
+        # partition remains untouched by the optimization/selection logic.
+        monitor = EpisodeGenerator(
+            symbols=config.symbols, examples=config.examples, seed=config.seed + 15917,
+        )
+        monitor_x, monitor_y = monitor.batch(min(128, config.eval_episodes), "train")
 
     def measure(step: int, loss: float | None) -> None:
         scores = evaluate_episodes(model, test, eval_inputs, eval_targets, device=device)
         trajectory.append({"step": step, "training_loss": loss, **scores})
 
     measure(0, None)
+    last_loss = None
     for step in range(1, config.steps + 1):
         model.train()
         x, y = train.batch(config.batch_size, "train")
@@ -211,9 +266,43 @@ def run_episode_experiment(config: EpisodeConfig, output_dir: Path) -> dict:
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        last_loss = round(float(loss.item()), 5)
+        actual_steps = step
         if step in checkpoints:
-            measure(step, round(float(loss.item()), 5))
+            measure(step, last_loss)
 
+        if config.patience and (step % config.validate_every == 0 or step == config.steps):
+            model.eval()
+            with torch.inference_mode():
+                validation_loss = float(F.cross_entropy(
+                    model(monitor_x.to(device)), monitor_y.to(device),
+                ).item())
+            if validation_loss < best_validation - config.min_delta:
+                best_validation = validation_loss
+                best_step = step
+                best_weights = {
+                    name: value.detach().clone() for name, value in model.state_dict().items()
+                }
+                stale = 0
+            else:
+                stale += 1
+                if stale >= config.patience:
+                    reason = "training_partition_plateau"
+                    break
+
+        if config.max_seconds is not None and perf_counter() - begin >= config.max_seconds:
+            reason = "time_budget"
+            break
+
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
+    # Always report final metrics from exactly the weights that are saved.
+    if best_weights is not None or trajectory[-1]["step"] != actual_steps:
+        measure(actual_steps, last_loss)
+        if best_weights is not None:
+            trajectory[-1]["selected_weight_step"] = best_step
+
+    elapsed = perf_counter() - begin
     output_dir.mkdir(parents=True, exist_ok=True)
     if config.symbols <= 8:
         heldout_count = sum(
@@ -225,9 +314,22 @@ def run_episode_experiment(config: EpisodeConfig, output_dir: Path) -> dict:
     report = {
         "benchmark": "new-mapping in-context retrieval",
         "config": asdict(config),
+        "code_fingerprint": fingerprint,
+        "cache_hit": False,
         "parameter_count": model.parameter_count,
         "trajectory": trajectory,
         "final": trajectory[-1],
+        "resource_usage": {
+            "requested_optimizer_steps": config.steps,
+            "executed_optimizer_steps": actual_steps,
+            "steps_avoided": config.steps - actual_steps,
+            "elapsed_seconds": round(elapsed, 4),
+            "stop_reason": reason,
+            "weights_selected_at_step": best_step,
+            "train_validation_best_nll": round(best_validation, 5) if best_step is not None else None,
+            "rough_adam_weight_gradient_mib": round(model.parameter_count * 16 / 1048576, 4),
+            "memory_note": "16 bytes/parameter is only a rough estimate for fp32 weights, Adam states and gradients; excludes activations and framework overhead",
+        },
         "random_guess_accuracy": round(1 / config.symbols, 5),
         "symbolic_lookup_accuracy": 1.0,
         "complete_mapping_count": math.factorial(config.symbols),
@@ -236,20 +338,21 @@ def run_episode_experiment(config: EpisodeConfig, output_dir: Path) -> dict:
         "limitations": [
             "Predicting a demonstrated value is associative retrieval, not rule induction or AGI.",
             "Train and held-out complete assignments are disjoint; individual example pairs can recur.",
+            "Early stopping monitors only the training mapping family, not test-set performance.",
             "Masked-value ablation is out of distribution, so it is not a calibrated causal estimate.",
             "Swapped contexts are valid mappings, but their full mappings are not held out by the original partition.",
             "Model weights do not change on evaluation examples.",
             "One random seed does not establish a robust improvement.",
         ],
     }
-    (output_dir / "meta_metrics.json").write_text(
-        json.dumps(report, indent=2) + "\n", encoding="utf-8",
-    )
-    torch.save({"state_dict": model.cpu().state_dict(), "config": asdict(config)}, output_dir / "meta.pt")
+    metric_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    torch.save({"state_dict": model.cpu().state_dict(), "config": asdict(config)}, checkpoint_path)
     return report
 
 
-def run_episode_sweep(config: EpisodeConfig, seeds: list[int], output_dir: Path) -> dict:
+def run_episode_sweep(
+    config: EpisodeConfig, seeds: list[int], output_dir: Path, *, reuse: bool = False,
+) -> dict:
     """Compare repeated runs using the same split rule, different random seeds."""
     config.validate()
     if len(seeds) < 2 or len(set(seeds)) != len(seeds):
@@ -257,7 +360,7 @@ def run_episode_sweep(config: EpisodeConfig, seeds: list[int], output_dir: Path)
     runs = {}
     for seed in seeds:
         report = run_episode_experiment(
-            replace(config, seed=seed), output_dir / f"seed_{seed}"
+            replace(config, seed=seed), output_dir / f"seed_{seed}", reuse=reuse
         )
         runs[str(seed)] = report["final"]
 

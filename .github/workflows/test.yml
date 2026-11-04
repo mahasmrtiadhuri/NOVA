@@ -32,3 +32,13 @@ jobs:
           python -m nova meta --steps 2 --symbols 4 --support-size 3 \
             --d-model 32 --layers 1 --heads 4 --batch-size 4 \
             --eval-episodes 20 --output runs/ci-meta
+      - name: Smoke zero-training baseline
+        run: |
+          python -m nova lite --symbols 4 --support-size 3 --eval-episodes 20 \
+            --output runs/ci-lite
+      - name: Smoke budgeted training
+        run: |
+          python -m nova meta --symbols 4 --support-size 3 --steps 6 \
+            --d-model 32 --layers 1 --heads 4 --batch-size 4 \
+            --patience 1 --validate-every 2 --min-delta 1000 \
+            --cpu-threads 1 --eval-episodes 20 --output runs/ci-budget

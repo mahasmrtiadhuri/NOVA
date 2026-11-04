@@ -13,7 +13,7 @@ from .model import TinyTransformer
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="NOVA continual-learning benchmarks")
-    parser.add_argument("command", choices=["experiment", "query", "sweep", "meta", "meta-sweep"])
+    parser.add_argument("command", choices=["experiment", "query", "sweep", "meta", "meta-sweep", "lite"])
     parser.add_argument("--dataset", choices=["facts", "rules", "text"], default="facts")
     parser.add_argument("--corpus", help="UTF-8 text file for the text benchmark")
     parser.add_argument("--test-fraction", type=float, default=0.25)
@@ -33,6 +33,16 @@ def main() -> None:
     parser.add_argument("--consolidation-strength", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda", "mps"])
+    parser.add_argument("--cpu-threads", type=int, default=None,
+                        help="Set PyTorch CPU threads (1 often helps tiny experiments)")
+    parser.add_argument("--max-seconds", type=float, default=None,
+                        help="Optional wall-time limit for meta training, checked between steps")
+    parser.add_argument("--patience", type=int, default=0,
+                        help="Stop meta training after N training-family validation plateaus; 0 disables")
+    parser.add_argument("--validate-every", type=int, default=25)
+    parser.add_argument("--min-delta", type=float, default=0.001)
+    parser.add_argument("--reuse", action="store_true",
+                        help="Reuse identical meta results if model/training code is unchanged")
     parser.add_argument("--seeds", default="7,19,42", help="Comma-separated seeds for sweep")
     parser.add_argument("--method", choices=["finetune", "replay", "nova", "joint_oracle"], default="nova")
     parser.add_argument("--task-id", type=int, default=0)
@@ -45,7 +55,11 @@ def main() -> None:
     args = parser.parse_args()
 
     output_dir = Path(args.output)
-    if args.command in {"meta", "meta-sweep"}:
+    if args.cpu_threads is not None:
+        if args.cpu_threads < 1:
+            parser.error("--cpu-threads must be positive")
+        torch.set_num_threads(args.cpu_threads)
+    if args.command in {"meta", "meta-sweep", "lite"}:
         from .episodes import EpisodeConfig, run_episode_experiment
 
         cfg = EpisodeConfig(
@@ -54,7 +68,17 @@ def main() -> None:
             learning_rate=args.learning_rate, d_model=args.d_model,
             layers=args.layers, heads=args.heads, seed=args.seed,
             eval_episodes=args.eval_episodes, device=args.device,
+            patience=args.patience, validate_every=args.validate_every,
+            min_delta=args.min_delta, max_seconds=args.max_seconds,
         )
+        if args.command == "lite":
+            from .efficient import run_lite_baseline
+
+            report = run_lite_baseline(cfg, output_dir)
+            print(f"Exact lookup: accuracy={report['heldout_accuracy']:.3f} "
+                  f"on {report['queries']} queries; optimizer steps=0")
+            print(f"Wrote {output_dir / 'lite_metrics.json'}")
+            return
         if args.command == "meta-sweep":
             from .episodes import run_episode_sweep
             try:
@@ -63,17 +87,20 @@ def main() -> None:
                 parser.error("--seeds must contain comma-separated integers")
             if len(seeds) < 2 or len(set(seeds)) != len(seeds):
                 parser.error("--seeds requires two or more distinct values")
-            report = run_episode_sweep(cfg, seeds, output_dir)
+            report = run_episode_sweep(cfg, seeds, output_dir, reuse=args.reuse)
             accuracy = report["summary"]["heldout_accuracy"]
             print(f"Held-out accuracy: {accuracy['mean']:.3f} ± {accuracy['std']:.3f}")
             print(f"Wrote {output_dir / 'meta_summary.json'}")
             return
-        report = run_episode_experiment(cfg, output_dir)
+        report = run_episode_experiment(cfg, output_dir, reuse=args.reuse)
         metrics = report["final"]
         print(f"Parameters: {report['parameter_count']:,}")
         print(f"Held-out mapping retrieval: {metrics['heldout_accuracy']:.3f}")
         print(f"Masked-example ablation: {metrics['masked_context_accuracy']:.3f}")
         print(f"Chance: {report['random_guess_accuracy']:.3f}")
+        usage = report["resource_usage"]
+        print(f"Optimizer steps: {usage['executed_optimizer_steps']}/{usage['requested_optimizer_steps']}; "
+              f"stopped: {usage['stop_reason']}; reused: {report['cache_hit']}")
         print(f"Wrote {output_dir / 'meta_metrics.json'}")
         return
     if args.command in {"experiment", "sweep"}:

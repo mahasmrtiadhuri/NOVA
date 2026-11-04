@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added a zero-training direct-lookup reference for episodic tasks with answers explicitly present in prompts.
+- Added optional training-family early stopping, soft wall-time budgets, and CPU thread configuration.
+- Added exact-configuration reuse with model/training-code and PyTorch-version checks.
+- Logged executed versus requested optimizer steps, elapsed time, and a rough parameter-memory estimate.
+- Added regression tests and GitHub Actions smoke checks for the cost-aware paths.
+- Kept quality trade-offs explicit: reducing compute can reduce held-out accuracy.
+
 ## 0.3.0
 
 - Added episodic in-context retrieval on unseen complete key/value mappings.
