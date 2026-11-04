@@ -1,0 +1,78 @@
+{
+  "task": "new-mapping in-context retrieval",
+  "seeds": [
+    7,
+    19,
+    42
+  ],
+  "config": {
+    "symbols": 4,
+    "examples": 3,
+    "steps": 1000,
+    "batch_size": 64,
+    "learning_rate": 0.003,
+    "d_model": 64,
+    "layers": 2,
+    "heads": 4,
+    "seed": 7,
+    "eval_episodes": 512,
+    "device": "cpu"
+  },
+  "split": {
+    "total_complete_mappings": 24,
+    "training_mappings": 20,
+    "heldout_mappings": 4
+  },
+  "runs": {
+    "7": {
+      "step": 1000,
+      "training_loss": 0.1394,
+      "heldout_accuracy": 0.91602,
+      "masked_context_accuracy": 0.17383,
+      "heldout_nll": 0.15369,
+      "counterfactual_accuracy": 0.96094,
+      "paired_counterfactual_success": 0.88867
+    },
+    "19": {
+      "step": 1000,
+      "training_loss": 0.01338,
+      "heldout_accuracy": 0.97852,
+      "masked_context_accuracy": 0.22656,
+      "heldout_nll": 0.05473,
+      "counterfactual_accuracy": 0.99219,
+      "paired_counterfactual_success": 0.9707
+    },
+    "42": {
+      "step": 1000,
+      "training_loss": 0.00015,
+      "heldout_accuracy": 1.0,
+      "masked_context_accuracy": 0.26953,
+      "heldout_nll": 0.00016,
+      "counterfactual_accuracy": 1.0,
+      "paired_counterfactual_success": 1.0
+    }
+  },
+  "summary": {
+    "heldout_accuracy": {
+      "mean": 0.96485,
+      "std": 0.04363
+    },
+    "masked_context_accuracy": {
+      "mean": 0.22331,
+      "std": 0.04793
+    },
+    "heldout_nll": {
+      "mean": 0.06953,
+      "std": 0.07783
+    },
+    "counterfactual_accuracy": {
+      "mean": 0.98438,
+      "std": 0.02067
+    },
+    "paired_counterfactual_success": {
+      "mean": 0.95312,
+      "std": 0.05771
+    }
+  },
+  "note": "4-symbol demo only; mapping families disjoint but support subsets can recur. This is not a measure of AGI."
+}

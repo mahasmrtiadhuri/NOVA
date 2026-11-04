@@ -170,3 +170,78 @@ def test_rule_sweep_paired_heldout_metrics(tmp_path):
     assert "final_heldout_accuracy_mean" in result["summary"]["nova"]
     assert "final_heldout_nll_mean" in result["summary"]["joint_oracle"]
     assert result["paired_accuracy_differences"]["nova_minus_replay"]["metric"] == "final_heldout_accuracy"
+
+
+def test_meta_episode_is_consistent_and_mapping_families_are_disjoint():
+    from nova.episodes import EpisodeGenerator
+
+    generator = EpisodeGenerator(symbols=7, examples=4, seed=13)
+    train_mappings, test_mappings = set(), set()
+    for split, collection in (("train", train_mappings), ("test", test_mappings)):
+        for _ in range(100):
+            prompt, target, mapping = generator.draw(split)
+            collection.add(mapping)
+            assert generator.partition(mapping) == split
+            assert len(prompt) == 11
+            query_key = prompt[-1] - generator.key_start
+            displayed = {
+                prompt[pos] - generator.key_start: prompt[pos + 1]
+                for pos in range(1, 9, 2)
+            }
+            assert target == displayed[query_key]
+    assert train_mappings.isdisjoint(test_mappings)
+
+
+def test_meta_counterfactual_changes_answer_not_query():
+    from nova.episodes import EpisodeGenerator
+
+    generator = EpisodeGenerator(symbols=8, examples=4, seed=19)
+    prompts, targets = generator.batch(16, "test")
+    changed, changed_targets = generator.counterfactual(prompts)
+    assert changed.shape == prompts.shape
+    assert torch.equal(changed[:, 1::2], prompts[:, 1::2])
+    assert (changed_targets != targets).all()
+    for row, label in zip(changed, changed_targets):
+        query_key = row[-1].item()
+        assert any(row[i].item() == query_key and row[i + 1].item() == label.item()
+                   for i in range(1, 9, 2))
+
+
+def test_meta_smoke_run_and_outputs(tmp_path):
+    from nova.episodes import EpisodeConfig, run_episode_experiment
+
+    config = EpisodeConfig(
+        symbols=6, examples=3, steps=2, batch_size=4,
+        d_model=32, layers=1, heads=4, eval_episodes=20,
+    )
+    report = run_episode_experiment(config, tmp_path)
+    assert report["benchmark"] == "new-mapping in-context retrieval"
+    assert report["final"]["step"] == 2
+    assert 0 <= report["final"]["heldout_accuracy"] <= 1
+    assert 0 <= report["final"]["paired_counterfactual_success"] <= 1
+    assert (tmp_path / "meta_metrics.json").exists()
+    assert (tmp_path / "meta.pt").exists()
+    checkpoint = torch.load(tmp_path / "meta.pt", weights_only=True)
+    assert "state_dict" in checkpoint
+
+
+def test_meta_rejects_invalid_config(tmp_path):
+    from nova.episodes import EpisodeConfig, run_episode_experiment
+
+    with pytest.raises(ValueError, match="examples"):
+        run_episode_experiment(EpisodeConfig(examples=9), tmp_path)
+
+
+def test_meta_sweep_reports_mean_and_rejects_duplicates(tmp_path):
+    from nova.episodes import EpisodeConfig, run_episode_sweep
+
+    config = EpisodeConfig(
+        symbols=4, examples=3, steps=1, batch_size=4,
+        d_model=32, layers=1, heads=4, eval_episodes=12,
+    )
+    report = run_episode_sweep(config, [3, 9], tmp_path)
+    assert report["seeds"] == [3, 9]
+    assert "std" in report["summary"]["heldout_accuracy"]
+    assert (tmp_path / "meta_summary.json").exists()
+    with pytest.raises(ValueError):
+        run_episode_sweep(config, [3, 3], tmp_path)

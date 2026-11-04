@@ -1,8 +1,8 @@
 # NOVA
 
-A small PyTorch research project for studying **continual learning** in decoder-only Transformers. NOVA trains a model from scratch, introduces tasks one at a time, and measures how well it retains earlier skills. Version 0.2 adds tests on inputs that were **not present during training**, along with a simple text benchmark and an offline reference model.
+A small PyTorch research project for studying **continual learning** in decoder-only Transformers. NOVA trains a model from scratch, introduces tasks one at a time, and measures how well it retains earlier skills. Version 0.2 added tests on inputs that were **not present during training**, along with a simple text benchmark and an offline reference model.
 
-This is an experimental learning system, **not an AGI model**. The algorithms are established continual-learning techniques combined for comparison; the project does not claim an architectural breakthrough.
+Version 0.3 adds episodic in-context adaptation to unseen complete symbol assignments. This is an experimental learning system, **not an AGI model**. The algorithms are established continual-learning techniques combined for comparison; the project does not claim an architectural breakthrough.
 
 ## What it compares
 
@@ -74,6 +74,52 @@ python -m nova query --output runs/facts --method nova --task-id 0 --entity-id 4
 
 The original benchmark trains on randomly assigned relation/entity/value facts, then evaluates those **same** facts. It measures memorization and forgetting only. Keep it as a sanity check, not evidence of generalization.
 
+### 4. In-context adaptation: learning a new mapping from examples (v0.3)
+
+The `meta` experiment trains a small Transformer on episodes containing temporary
+key/value pairs. Each episode presents a few mappings and asks for the value of
+one demonstrated key. At evaluation, the model receives **new complete mappings**
+it did not encounter during training; **weights are frozen** while answering.
+
+```bash
+python -m nova meta --symbols 4 --support-size 3 --steps 1000 \
+  --batch-size 64 --d-model 64 --layers 2 --heads 4 \
+  --learning-rate 0.003 --eval-episodes 512 --seed 7 \
+  --output runs/meta-small
+```
+
+Outputs include held-out accuracy and NLL, a masked-demonstration ablation,
+accuracy after swapping the queried value with another shown value, and the
+proportion of prompts where **both original and swapped predictions** are correct.
+The masked demonstration contains an unseen mask token at evaluation, so it is
+an out-of-distribution control, **not** a clean causal estimate.
+
+Mappings are full one-to-one permutations of symbols. Their split is determined
+by a fixed CRC32 bucket, so complete assignments never appear in both train and
+test. **Displayed subsets can still recur**, and the counterfactual swaps may
+produce maps outside the original holdout partition.
+
+For four symbols there are only **24 distinct complete mappings** (20 train,
+4 held out), even though many episode orders and support subsets are possible.
+Thus a high score is on a deliberately **tiny** benchmark. A symbolic lookup
+algorithm scores 100% without any learning; the neural model is not expected to
+beat that. Learning to retrieve a shown value is not learning arbitrary new
+rules, long-term skill retention, or AGI.
+
+Repeat across seeds:
+
+```bash
+python -m nova meta-sweep --seeds 7,19,42 --symbols 4 --support-size 3 \
+  --steps 1000 --batch-size 64 --d-model 64 --layers 2 --heads 4 \
+  --learning-rate 0.003 --eval-episodes 512 --output runs/meta-sweep
+```
+
+One local three-seed experiment on this 4-symbol setup produced mean held-out
+accuracy **0.965** (sample standard deviation **0.044**), against **0.250**
+random guessing. Individual results: 0.916, 0.979, and 1.000. These results
+show successful retrieval of in-context examples in a small synthetic setting;
+they do not demonstrate AGI, broad transfer, or a novel algorithm.
+
 ## Run across multiple seeds
 
 ```bash
@@ -119,7 +165,8 @@ nova/
   learning.py     Fine-tuning, replay, consolidation
   experiment.py   Sequential and joint-oracle training
   sweep.py        Multiple seeds and paired summaries
-  cli.py          Experiment, sweep and query commands
+  cli.py          Experiment, sweep, meta and query commands
+  episodes.py     In-context mapping episodes, tests and metrics
 tests/
   test_nova.py    Regression and benchmark leakage tests
 examples/
@@ -135,4 +182,4 @@ examples/
 4. Report uncertainty across more seeds and study data contamination from duplicated text.
 5. Move toward open-ended environments only after the model demonstrates consistent transfer on controlled tasks.
 
-NOVA v0.2 is a reproducible research prototype. It does not learn arbitrary skills by itself, solve general reasoning tasks, or approach frontier-scale AI performance.
+NOVA v0.3 is a reproducible research prototype. It does not learn arbitrary skills by itself, solve general reasoning tasks, or approach frontier-scale AI performance.

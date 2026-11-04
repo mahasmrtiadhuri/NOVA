@@ -13,7 +13,7 @@ from .model import TinyTransformer
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="NOVA continual-learning benchmarks")
-    parser.add_argument("command", choices=["experiment", "query", "sweep"])
+    parser.add_argument("command", choices=["experiment", "query", "sweep", "meta", "meta-sweep"])
     parser.add_argument("--dataset", choices=["facts", "rules", "text"], default="facts")
     parser.add_argument("--corpus", help="UTF-8 text file for the text benchmark")
     parser.add_argument("--test-fraction", type=float, default=0.25)
@@ -37,11 +37,45 @@ def main() -> None:
     parser.add_argument("--method", choices=["finetune", "replay", "nova", "joint_oracle"], default="nova")
     parser.add_argument("--task-id", type=int, default=0)
     parser.add_argument("--entity-id", type=int, default=0)
+    parser.add_argument("--support-size", type=int, default=4, help="Demonstrations per meta-learning episode")
+    parser.add_argument("--symbols", type=int, default=8, help="Key/value symbols in meta-learning benchmark")
+    parser.add_argument("--eval-episodes", type=int, default=512)
     parser.add_argument("--left", type=int, default=0, help="Left operand for rule query")
     parser.add_argument("--right", type=int, default=0, help="Right operand for rule query")
     args = parser.parse_args()
 
     output_dir = Path(args.output)
+    if args.command in {"meta", "meta-sweep"}:
+        from .episodes import EpisodeConfig, run_episode_experiment
+
+        cfg = EpisodeConfig(
+            symbols=args.symbols, examples=args.support_size,
+            steps=args.steps, batch_size=args.batch_size,
+            learning_rate=args.learning_rate, d_model=args.d_model,
+            layers=args.layers, heads=args.heads, seed=args.seed,
+            eval_episodes=args.eval_episodes, device=args.device,
+        )
+        if args.command == "meta-sweep":
+            from .episodes import run_episode_sweep
+            try:
+                seeds = [int(s.strip()) for s in args.seeds.split(",")]
+            except ValueError:
+                parser.error("--seeds must contain comma-separated integers")
+            if len(seeds) < 2 or len(set(seeds)) != len(seeds):
+                parser.error("--seeds requires two or more distinct values")
+            report = run_episode_sweep(cfg, seeds, output_dir)
+            accuracy = report["summary"]["heldout_accuracy"]
+            print(f"Held-out accuracy: {accuracy['mean']:.3f} ± {accuracy['std']:.3f}")
+            print(f"Wrote {output_dir / 'meta_summary.json'}")
+            return
+        report = run_episode_experiment(cfg, output_dir)
+        metrics = report["final"]
+        print(f"Parameters: {report['parameter_count']:,}")
+        print(f"Held-out mapping retrieval: {metrics['heldout_accuracy']:.3f}")
+        print(f"Masked-example ablation: {metrics['masked_context_accuracy']:.3f}")
+        print(f"Chance: {report['random_guess_accuracy']:.3f}")
+        print(f"Wrote {output_dir / 'meta_metrics.json'}")
+        return
     if args.command in {"experiment", "sweep"}:
         cfg = ExperimentConfig(
             tasks=args.tasks, entities=args.entities, values=args.values,
