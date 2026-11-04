@@ -17,4 +17,13 @@ jobs:
           python -m pip install -e '.[dev]' --no-deps
           python -m pip install pytest
       - name: Run tests
-        run: pytest
+        run: python -m pytest
+      - name: Smoke rule generalization
+        run: |
+          python -m nova experiment --dataset rules --tasks 2 --entities 5 --values 3 \
+            --steps 2 --d-model 32 --layers 1 --heads 4 --batch-size 4 --output runs/ci-rules
+      - name: Smoke text learning
+        run: |
+          python -m nova experiment --dataset text --corpus examples/sample_text.txt \
+            --tasks 2 --context-length 8 --steps 2 --d-model 32 \
+            --layers 1 --heads 4 --batch-size 4 --output runs/ci-text

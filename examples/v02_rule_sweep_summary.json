@@ -1,0 +1,74 @@
+{
+  "config": {
+    "tasks": 3,
+    "entities": 8,
+    "values": 4,
+    "steps": 25,
+    "batch_size": 16,
+    "d_model": 32,
+    "layers": 1,
+    "heads": 4,
+    "learning_rate": 0.002,
+    "replay_fraction": 0.3,
+    "memory_capacity": 128,
+    "consolidation_strength": 2.0,
+    "seed": 7,
+    "device": "cpu",
+    "dataset": "rules",
+    "test_fraction": 0.25,
+    "corpus": null,
+    "context_length": 8
+  },
+  "seeds": [
+    7,
+    19,
+    42
+  ],
+  "summary": {
+    "finetune": {
+      "final_mean_accuracy_mean": 0.44444,
+      "final_mean_accuracy_std": 0.06624,
+      "final_heldout_accuracy_mean": 0.28472,
+      "final_heldout_accuracy_std": 0.04811,
+      "final_heldout_nll_mean": 1.82874,
+      "final_heldout_nll_std": 0.40668
+    },
+    "replay": {
+      "final_mean_accuracy_mean": 0.41435,
+      "final_mean_accuracy_std": 0.03131,
+      "final_heldout_accuracy_mean": 0.26389,
+      "final_heldout_accuracy_std": 0.08419,
+      "final_heldout_nll_mean": 1.6844,
+      "final_heldout_nll_std": 0.38779
+    },
+    "nova": {
+      "final_mean_accuracy_mean": 0.44213,
+      "final_mean_accuracy_std": 0.03825,
+      "final_heldout_accuracy_mean": 0.27778,
+      "final_heldout_accuracy_std": 0.04337,
+      "final_heldout_nll_mean": 1.60095,
+      "final_heldout_nll_std": 0.28738
+    },
+    "joint_oracle": {
+      "final_mean_accuracy_mean": 0.44907,
+      "final_mean_accuracy_std": 0.03825,
+      "final_heldout_accuracy_mean": 0.28472,
+      "final_heldout_accuracy_std": 0.09845,
+      "final_heldout_nll_mean": 1.59442,
+      "final_heldout_nll_std": 0.19355
+    }
+  },
+  "paired_accuracy_differences": {
+    "nova_minus_finetune": {
+      "metric": "final_heldout_accuracy",
+      "mean": -0.00694,
+      "std": 0.01203
+    },
+    "nova_minus_replay": {
+      "metric": "final_heldout_accuracy",
+      "mean": 0.01389,
+      "std": 0.04337
+    }
+  },
+  "note": "Descriptive statistics only. Rule pairs and text spans are held out; the joint oracle has access to all tasks from the beginning."
+}

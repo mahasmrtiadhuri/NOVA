@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nova-continual-learning"
-version = "0.1.0"
-description = "A reproducible tiny-transformer continual learning benchmark"
+version = "0.2.0"
+description = "Reproducible continual-learning and held-out generalization benchmarks"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["torch>=2.2,<3"]

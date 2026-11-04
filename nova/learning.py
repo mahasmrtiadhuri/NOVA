@@ -141,7 +141,12 @@ def train_one_task(
         if method == "nova" and memory.items and (step + 1) % max(1, steps // 5) == 0:
             memory.update_priorities(model, device=device)
     if method == "nova":
-        consolidation.capture(model, task.prompts.to(device), task.targets.to(device))
+        # Full text corpora can have thousands of windows. Cap this extra
+        # importance-estimation pass so the consolidation step stays bounded.
+        sample_count = min(128, len(task.targets))
+        fisher_generator = torch.Generator().manual_seed(seed + 1000 + task_id)
+        sample = torch.randperm(len(task.targets), generator=fisher_generator)[:sample_count]
+        consolidation.capture(model, task.prompts[sample].to(device), task.targets[sample].to(device))
     if method != "finetune":
         memory.remember(task.prompts, task.targets)
     return losses
