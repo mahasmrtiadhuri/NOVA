@@ -27,3 +27,8 @@ jobs:
           python -m nova experiment --dataset text --corpus examples/sample_text.txt \
             --tasks 2 --context-length 8 --steps 2 --d-model 32 \
             --layers 1 --heads 4 --batch-size 4 --output runs/ci-text
+      - name: Smoke in-context mapping
+        run: |
+          python -m nova meta --steps 2 --symbols 4 --support-size 3 \
+            --d-model 32 --layers 1 --heads 4 --batch-size 4 \
+            --eval-episodes 20 --output runs/ci-meta

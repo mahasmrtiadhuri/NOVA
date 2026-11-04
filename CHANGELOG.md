@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Added episodic in-context retrieval on unseen complete key/value mappings.
+- Added counterfactual value-swap tests, input-masking controls and NLL metrics.
+- Added multi-seed CLI and explicit mapping-partition checks.
+- Kept prior continual learning benchmarks unchanged and added CI smoke coverage.
+
 ## 0.2.0
 
 - Added a compositional rule benchmark with held-out operand pairs and deterministic splits.
