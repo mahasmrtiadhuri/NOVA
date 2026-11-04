@@ -245,3 +245,85 @@ def test_meta_sweep_reports_mean_and_rejects_duplicates(tmp_path):
     assert (tmp_path / "meta_summary.json").exists()
     with pytest.raises(ValueError):
         run_episode_sweep(config, [3, 3], tmp_path)
+
+
+def test_direct_lookup_matches_context_and_counterfactual():
+    from nova.episodes import EpisodeGenerator
+    from nova.efficient import lookup_demonstrated_value
+
+    generator = EpisodeGenerator(symbols=6, examples=3, seed=23)
+    prompts, expected = generator.batch(32, "test")
+    assert torch.equal(lookup_demonstrated_value(prompts), expected)
+    changed, changed_expected = generator.counterfactual(prompts)
+    assert torch.equal(lookup_demonstrated_value(changed), changed_expected)
+    with pytest.raises(ValueError, match="match exactly one"):
+        malformed = prompts.clone()
+        malformed[0, -1] = generator.key_start + generator.symbols + 12
+        lookup_demonstrated_value(malformed)
+    with pytest.raises(ValueError, match="token IDs"):
+        lookup_demonstrated_value(prompts[:, :6])
+
+
+def test_lite_path_uses_no_training_or_checkpoints(tmp_path):
+    from nova.episodes import EpisodeConfig
+    from nova.efficient import run_lite_baseline
+
+    config = EpisodeConfig(symbols=4, examples=3, steps=2, eval_episodes=32)
+    report = run_lite_baseline(config, tmp_path)
+    assert report["heldout_accuracy"] == 1.0
+    assert report["counterfactual_accuracy"] == 1.0
+    assert report["optimizer_steps"] == report["parameters"] == 0
+    assert (tmp_path / "lite_metrics.json").exists()
+    assert not list(tmp_path.glob("*.pt"))
+
+
+def test_early_stop_uses_training_family_and_restores_best_weights(tmp_path):
+    from nova.episodes import EpisodeConfig, run_episode_experiment
+
+    config = EpisodeConfig(
+        symbols=4, examples=3, steps=30, batch_size=4, d_model=32,
+        layers=1, heads=4, eval_episodes=12,
+        patience=1, validate_every=2, min_delta=1000.0,
+    )
+    report = run_episode_experiment(config, tmp_path)
+    usage = report["resource_usage"]
+    assert usage["stop_reason"] == "training_partition_plateau"
+    assert usage["executed_optimizer_steps"] == 4
+    assert usage["steps_avoided"] == 26
+    assert usage["weights_selected_at_step"] == 2
+    assert report["final"]["selected_weight_step"] == 2
+    checkpoint = torch.load(tmp_path / "meta.pt", weights_only=True)
+    assert checkpoint["config"]["patience"] == 1
+
+
+def test_budgeted_training_and_exact_reuse(tmp_path):
+    from nova.episodes import EpisodeConfig, run_episode_experiment
+
+    config = EpisodeConfig(
+        symbols=4, examples=3, steps=10, batch_size=4,
+        d_model=32, layers=1, heads=4, eval_episodes=12,
+        max_seconds=0.000001,
+    )
+    first = run_episode_experiment(config, tmp_path, reuse=True)
+    assert first["cache_hit"] is False
+    assert first["resource_usage"]["stop_reason"] == "time_budget"
+    assert first["resource_usage"]["executed_optimizer_steps"] == 1
+    checkpoint_time = (tmp_path / "meta.pt").stat().st_mtime_ns
+    second = run_episode_experiment(config, tmp_path, reuse=True)
+    assert second["cache_hit"] is True
+    assert (tmp_path / "meta.pt").stat().st_mtime_ns == checkpoint_time
+    changed = run_episode_experiment(
+        EpisodeConfig(**{**vars(config), "steps": 11}), tmp_path, reuse=True,
+    )
+    assert changed["cache_hit"] is False
+
+
+def test_rejects_invalid_compute_limits():
+    from nova.episodes import EpisodeConfig
+
+    with pytest.raises(ValueError, match="patience"):
+        EpisodeConfig(patience=-1).validate()
+    with pytest.raises(ValueError, match="max_seconds"):
+        EpisodeConfig(max_seconds=0).validate()
+    with pytest.raises(ValueError, match="validate_every"):
+        EpisodeConfig(validate_every=0).validate()

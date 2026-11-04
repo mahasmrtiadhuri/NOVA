@@ -2,7 +2,7 @@
 
 A small PyTorch research project for studying **continual learning** in decoder-only Transformers. NOVA trains a model from scratch, introduces tasks one at a time, and measures how well it retains earlier skills. Version 0.2 added tests on inputs that were **not present during training**, along with a simple text benchmark and an offline reference model.
 
-Version 0.3 adds episodic in-context adaptation to unseen complete symbol assignments. This is an experimental learning system, **not an AGI model**. The algorithms are established continual-learning techniques combined for comparison; the project does not claim an architectural breakthrough.
+Version 0.3 adds episodic in-context adaptation to unseen complete symbol assignments. Version 0.4 adds cost-aware training controls, caching, and a zero-training reference for exactly solvable episodes. This is an experimental learning system, **not an AGI model**. The algorithms are established continual-learning techniques combined for comparison; the project does not claim an architectural breakthrough.
 
 ## What it compares
 
@@ -37,6 +37,67 @@ python -m nova experiment --dataset rules --tasks 3 --entities 8 --values 4 \
 ```
 
 On Windows PowerShell, either put the command on one line or use PowerShell's backtick for continuation instead of `\`.
+
+## Cost-aware experiments: NOVA Lite (v0.4)
+
+**Principle: use the cheapest valid method first.** These tools are research
+infrastructure, not a demonstration that NOVA has learned to design its own
+brain. No payment, cloud account, API key, or pretrained weights are needed.
+You still need your own compute hardware and electricity; installing Python
+packages may use bandwidth.
+
+### First: can this task be solved without training?
+
+The v0.3 episodic benchmark asks for a value that is *already shown* beside its
+key. A few lines of deterministic lookup solve it exactly, making it an
+important non-neural baseline. Run the baseline before training anything:
+
+```bash
+python -m nova lite --symbols 4 --support-size 3 --eval-episodes 512 \
+  --output runs/lite
+```
+
+The `lite_metrics.json` report includes held-out lookup accuracy, controlled
+value-swap accuracy, execution time and **zero** trainable parameters and
+optimizer steps. This is **not** autonomous learning: it works only because
+that particular benchmark includes the requested answer in the prompt. For
+other tasks, a learner may still be necessary.
+
+### Second: keep neural training inside a budget
+
+```bash
+python -m nova meta --symbols 4 --support-size 3 --steps 250 \
+  --batch-size 16 --d-model 32 --layers 1 --heads 4 \
+  --cpu-threads 1 --patience 3 --validate-every 20 \
+  --min-delta 0.005 --max-seconds 60 --reuse \
+  --output runs/budgeted
+```
+
+- `--patience 3`: stop after three *training-family validation* checks without
+  sufficient improvement. The held-out test mappings do **not** select the
+  stopping point or model weights.
+- `--validate-every 20`: how frequently to check validation loss. Evaluating
+  also consumes CPU time, so very frequent checks can cost more.
+- `--min-delta 0.005`: the minimum improvement needed to reset patience.
+- `--max-seconds 60`: soft time budget, checked **after** an optimizer step.
+  It may overrun slightly; it does not impose an operating-system hard limit.
+- `--reuse`: if the same configuration, model code, and PyTorch version were
+  previously run, reuse the saved metrics and weights instead of retraining.
+  Never point this at checkpoints from an untrusted source.
+- `--cpu-threads 1`: often more efficient for tiny CPU workloads; benchmark
+  higher values on your actual hardware before making a general conclusion.
+
+The report's `resource_usage` includes requested/executed steps, time,
+stopping reason, and a **rough** parameter-memory estimate. Actual system RAM,
+GPU memory, energy, and monetary cost are **not measured**. Caching is a
+research convenience, not a substitute for independent repeated trials.
+
+**Important:** spending fewer steps may reduce accuracy. In one local 100-step
+smoke comparison on a 13,760-parameter model, stopping at 60 steps gave 17.2%
+held-out accuracy versus 24.2% after all 100 steps. These settings were
+exploratory, not tuned on a validation-only search, and neither result is
+strong evidence about learning quality. Inspect the quality/computation
+trade-off instead of maximizing the savings percentage.
 
 ## Benchmarks
 
@@ -166,7 +227,8 @@ nova/
   experiment.py   Sequential and joint-oracle training
   sweep.py        Multiple seeds and paired summaries
   cli.py          Experiment, sweep, meta and query commands
-  episodes.py     In-context mapping episodes, tests and metrics
+  episodes.py     In-context mapping episodes, cost-limited training and cache
+  efficient.py    Zero-weight exact lookup baseline
 tests/
   test_nova.py    Regression and benchmark leakage tests
 examples/
@@ -182,4 +244,4 @@ examples/
 4. Report uncertainty across more seeds and study data contamination from duplicated text.
 5. Move toward open-ended environments only after the model demonstrates consistent transfer on controlled tasks.
 
-NOVA v0.3 is a reproducible research prototype. It does not learn arbitrary skills by itself, solve general reasoning tasks, or approach frontier-scale AI performance.
+NOVA v0.4 is a reproducible research prototype. It does not learn arbitrary skills by itself, solve general reasoning tasks, or approach frontier-scale AI performance.
