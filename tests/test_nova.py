@@ -99,3 +99,74 @@ def test_sweep_outputs_paired_seed_metrics(tmp_path):
     assert (tmp_path / "summary.json").exists()
     with pytest.raises(ValueError):
         run_sweep(cfg, [3, 3], tmp_path)
+
+
+def test_rule_split_is_seeded_and_heldout_pairs_are_never_trained():
+    from nova.benchmarks import make_rule_benchmark, rule_value
+
+    first = make_rule_benchmark(tasks=4, operands=8, values=5, seed=31, test_fraction=0.25)
+    second = make_rule_benchmark(tasks=4, operands=8, values=5, seed=31, test_fraction=0.25)
+    for train_task, test_task, second_test in zip(first.train.tasks, first.test.tasks, second.test.tasks):
+        train_prompts = {tuple(row) for row in train_task.prompts.tolist()}
+        test_prompts = {tuple(row) for row in test_task.prompts.tolist()}
+        assert not train_prompts.intersection(test_prompts)
+        assert torch.equal(test_task.prompts, second_test.prompts)
+        assert len(train_prompts) + len(test_prompts) == 64
+    assert first.details["test_pairs"] > 0
+    lookup = first.test.token_to_id
+    task = first.test.tasks[0]
+    a = int(first.test.vocabulary[int(task.prompts[0, 2])].split("_")[1])
+    b = int(first.test.vocabulary[int(task.prompts[0, 3])].split("_")[1])
+    assert task.targets[0].item() == lookup[f"value_{rule_value(0, a, b, 5)}"]
+
+
+def test_rule_experiment_reports_heldout_and_joint_reference(tmp_path):
+    cfg = ExperimentConfig(
+        dataset="rules", tasks=2, entities=6, values=3,
+        steps=2, batch_size=4, d_model=32, layers=1, heads=4,
+    )
+    data = run_experiment(cfg, tmp_path)
+    assert set(data["results"]) == {"finetune", "replay", "nova", "joint_oracle"}
+    assert data["benchmark"]["train_pairs"] > 0
+    for result in data["results"].values():
+        assert 0 <= result["final_heldout_accuracy"] <= 1
+        assert result["final_heldout_nll"] > 0
+    assert "mean_heldout_forgetting" in data["results"]["nova"]
+    assert "mean_heldout_forgetting" not in data["results"]["joint_oracle"]
+    assert (tmp_path / "joint_oracle.pt").exists()
+
+
+def test_text_corpus_split_is_bounded_and_has_out_of_sample_windows(tmp_path):
+    from nova.benchmarks import make_text_benchmark
+
+    file = tmp_path / "corpus.txt"
+    file.write_text("The city wakes slowly at sunrise. " * 40, encoding="utf-8")
+    benchmark = make_text_benchmark(
+        file, tasks=2, context_length=8, test_fraction=0.25,
+    )
+    assert benchmark.context_length == 8
+    for train, test in zip(benchmark.train.tasks, benchmark.test.tasks):
+        assert train.prompts.shape[1] == test.prompts.shape[1] == 8
+        assert len(train.targets) > len(test.targets) > 0
+    cfg = ExperimentConfig(
+        dataset="text", corpus=str(file), tasks=2, context_length=8,
+        steps=2, batch_size=4, d_model=32, layers=1, heads=4,
+    )
+    report = run_experiment(cfg, tmp_path / "results", save_checkpoints=False)
+    assert report["results"]["nova"]["final_heldout_nll"] > 0
+    assert not (tmp_path / "results" / "nova.pt").exists()
+    with pytest.raises(ValueError):
+        make_text_benchmark(file, tasks=2, context_length=1024, test_fraction=0.25)
+
+
+def test_rule_sweep_paired_heldout_metrics(tmp_path):
+    from nova.sweep import run_sweep
+
+    cfg = ExperimentConfig(
+        dataset="rules", tasks=2, entities=5, values=3, steps=2,
+        batch_size=4, d_model=32, layers=1, heads=4,
+    )
+    result = run_sweep(cfg, [4, 9], tmp_path)
+    assert "final_heldout_accuracy_mean" in result["summary"]["nova"]
+    assert "final_heldout_nll_mean" in result["summary"]["joint_oracle"]
+    assert result["paired_accuracy_differences"]["nova_minus_replay"]["metric"] == "final_heldout_accuracy"
