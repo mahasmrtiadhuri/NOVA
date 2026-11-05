@@ -1,0 +1,72 @@
+{
+  "benchmark": "MOLT finite-integer skill compression",
+  "config": {
+    "operator": "max",
+    "modulus": 8,
+    "steps": 300,
+    "seed": 7,
+    "benchmark_requests": 512,
+    "output_dir": "runs/molt-final"
+  },
+  "training": {
+    "train_seconds": 0.99046,
+    "teacher_full_domain_accuracy": 1.0,
+    "teacher_parameters": 30144,
+    "teacher_parameter_bytes_fp32": 120576
+  },
+  "splits": {
+    "train": 25,
+    "validation": 19,
+    "test": 20
+  },
+  "compiler": {
+    "status": "compiled",
+    "candidate_evaluations": 523,
+    "wall_seconds": 0.01776,
+    "skill": {
+      "op": "max",
+      "modulus": 8,
+      "coefficients": [
+        0,
+        0,
+        0
+      ]
+    },
+    "certificate_validation_examples": 19
+  },
+  "results": {
+    "neural_reference": {
+      "accuracy": 1.0,
+      "mean_ms": 0.351418,
+      "median_ms": 0.237523,
+      "p95_ms": 0.62812,
+      "joules_unisolated_cpu_package": null
+    },
+    "molt_router": {
+      "accuracy": 1.0,
+      "mean_ms": 0.0011742,
+      "median_ms": 0.000661,
+      "p95_ms": 0.001082,
+      "joules_unisolated_cpu_package": null,
+      "routing": {
+        "compiled": 512
+      }
+    },
+    "handwritten_python": {
+      "accuracy": 1.0,
+      "mean_ms": 0.0001125,
+      "median_ms": 0.00011,
+      "p95_ms": 0.000121
+    }
+  },
+  "estimated_compile_break_even_requests": 51,
+  "measurement_notes": [
+    "Teacher was trained on the complete finite task domain; the test split was unseen by compilation only.",
+    "Neural reference is intentionally tiny, not a competitive optimized production model.",
+    "All performance numbers are single-threaded CPU request latencies on this machine; no uncertainty interval.",
+    "Handwritten Python is a relevant lower-overhead baseline; compiled symbolic rules are not automatically better than known code.",
+    "Break-even amortizes compilation only against subsequent neural inference, not teacher training, storage or energy.",
+    "RAPL readings, if present, measure a CPU package and include unrelated activity; null means unavailable.",
+    "Compiling a known rule from a small DSL is not general reasoning or novel algorithm discovery."
+  ]
+}

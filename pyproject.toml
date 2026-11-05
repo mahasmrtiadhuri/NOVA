@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nova-continual-learning"
-version = "0.3.0"
-description = "Continual learning and in-context adaptation research benchmarks"
+version = "0.4.0"
+description = "Continual learning, in-context adaptation, and cost-aware skill compilation experiments"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["torch>=2.2,<3"]
@@ -15,6 +15,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 nova = "nova.cli:main"
+nova-molt = "nova.molt.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["nova*"]

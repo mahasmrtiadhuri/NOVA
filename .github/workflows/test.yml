@@ -32,3 +32,17 @@ jobs:
           python -m nova meta --steps 2 --symbols 4 --support-size 3 \
             --d-model 32 --layers 1 --heads 4 --batch-size 4 \
             --eval-episodes 20 --output runs/ci-meta
+      - name: Smoke MOLT compiler and neural teacher
+        env:
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+        run: |
+          python -m nova.molt demo --operator max --steps 300 \
+            --modulus 8 --requests 64 --output runs/ci-molt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('runs/ci-molt/report.json').read_text())
+          assert report['compiler']['status'] == 'compiled'
+          assert report['results']['molt_router']['accuracy'] == 1.0
+          PY

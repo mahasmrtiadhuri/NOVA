@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — NOVA MOLT research prototype
+
+- Added a bounded neural-to-symbolic skill compiler based on a finite, explicit integer DSL.
+- Added separate compilation training, validation and untouched test splits; certification refuses unsupported, ambiguous, and budget-truncated cases.
+- Added a router with domain checks, fallback, optional independent spot verification and automatic skill disabling on disagreement.
+- Added JSON-only skill persistence with revalidation on load; no dynamic code execution.
+- Added a tiny trainable Transformer teacher, CPU latency benchmark, handwritten Python baseline, compilation break-even estimate, and optional Linux RAPL readings.
+- Added a standalone command-line demo, reproducible example report, and dedicated regression tests.
+- Does not claim new algorithm discovery, general-purpose compression, or measured hardware energy savings.
+
 ## 0.3.0
 
 - Added episodic in-context retrieval on unseen complete key/value mappings.

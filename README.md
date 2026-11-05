@@ -4,6 +4,36 @@ A small PyTorch research project for studying **continual learning** in decoder-
 
 Version 0.3 adds episodic in-context adaptation to unseen complete symbol assignments. This is an experimental learning system, **not an AGI model**. The algorithms are established continual-learning techniques combined for comparison; the project does not claim an architectural breakthrough.
 
+## NOVA MOLT: cost-aware skill compilation (v0.4 research prototype)
+
+**MOLT** explores a practical question: *can we replace repeated neural inference
+with a smaller, verified operation after a model has learned a task?* It trains
+an existing small Transformer as a teacher, observes a subset of its answers,
+searches a bounded **symbolic operator library**, checks candidate programs
+on disjoint validation examples, and routes supported queries through a
+compiled skill. Unsupported tasks and out-of-domain inputs use the original
+model or application-provided fallback.
+
+Run the self-contained CPU demo (no APIs or cloud services):
+
+```bash
+python -m nova.molt demo --operator max --steps 300 --requests 300 --output runs/molt
+python -m nova.molt query --skill runs/molt/skill.json --left 3 --right 7
+```
+
+The demo produces `runs/molt/report.json` containing accuracy, per-request
+latency, compilation time and a rough break-even estimate. A local Linux RAPL
+counter may provide approximate package energy; if unavailable, energy fields
+are explicitly `null` (never estimated from tokens or runtime).
+
+**Limitations:** The teacher learns the complete tiny numerical input domain;
+inputs are held out *from compilation*, not from the teacher's original
+training. The operator library is hand-designed, and even a fully validated
+program can fail outside its certified domain. MOLT is **not** AGI, a new
+reasoning algorithm, or proof of electricity savings. A handwritten direct
+implementation is also measured and may be faster than MOLT's routing layer.
+See [MOLT.md](MOLT.md) for the architecture, fair comparison notes and API.
+
 ## What it compares
 
 | Method | Training procedure | Online learner? |
